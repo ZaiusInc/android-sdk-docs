@@ -6,6 +6,8 @@ The Zaius Android SDK collects and associates push tokens with customers and tra
 
 ## Update build.gradle
 
+You'll need to add the Zaius maven repository, and add the Zaius SDK as a dependency, and if you want to receive and display push notifications, you'll also need to include Google's `firebase-messaging` package.
+
 ```groovy
 repositories {
   maven {
@@ -15,8 +17,8 @@ repositories {
 
 dependencies {
   ...
-  compile 'com.zaius:androidsdk:<version>' // Add the Zaius SDK as a dependency
-  compile 'com.google.firebase:firebase-messaging:<version>' // Only required if you want to use mobile push messaging
+  implementation 'com.zaius:androidsdk:<version>' // Add the Zaius SDK as a dependency
+  implementation 'com.google.firebase:firebase-messaging:<version>' // Only required if you want to use mobile push messaging
 }
 ```
 
@@ -40,9 +42,48 @@ public void onCreate() {
 }
 ```
 
+## Token Collection
+
+To allow Zaius to start collection push tokens, you'll need to add the following lines to your `AndroidManifest.xml` file under the `<application ...>` tag:
+
+```markup
+<service
+    android:name="com.zaius.androidsdk.ZaiusRegistrationIntentService"
+    android:permission="android.permission.BIND_JOB_SERVICE"
+    android:exported="false" />
+```
+
+Optionally the Zaius Android SDK allows you to register a receiver, to be called when Zaius retrieves a push token.
+
+To do so you simply need to implement a class extending `ZaiusReceiver`:
+
+```java
+public class MyReceiver extends ZaiusReceiver {
+  @Override
+  public void onTokenRegistration(Context context, String token) {
+    // Do something with the token (e.g. fire an event)
+  }
+}
+```
+
+Then inside your `Application` implementation in `onCreate` you should register the receiver to handle the action:
+
+```java
+    @Override
+    public void onCreate() {
+        // ...
+        registerReceiver(
+                new MyReceiver(),
+                new IntentFilter(ZaiusReceiver.TOKEN_REGISTRATION_ACTION)
+        );
+        // ...
+    }
+
+```
+
 ## Setup Push
 
-Pass along the data in the `RemoteMessage` available in `FirebaseMessagingService.onMessageReceived` as extras in the `Intent` corresponding to push opens:
+After you've sorted out initialization and token collection, the next step is to set up the actual Push Notifications, you'll need to extend the `FirebaseMessagingService` class, overriding the `onMessageReceived` method, and doing the majority of the logic for displaying notifications from there. 
 
 ```java
 @Override
@@ -78,6 +119,32 @@ private void sendNotification(Bundle data) {
 }
 ```
 
+For Zaius to properly record and attribute open events, you'll need to pass along the data in the `RemoteMessage` available in `FirebaseMessagingService.onMessageReceived` as extras in the `Intent` corresponding the push open itself, as shown above.
+
+To make sure the actual open events are tracked, you'll need to call `Zaius.pushOpened` from the response activity to the above notification display, an example of an activity is shown below:
+
+```java
+public class PushActivity extends Activity {
+    // ...
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        // ...
+        Bundle bundle = getIntent().getExtras();
+        if (bundle != null) {
+            try {
+                Zaius.getInstance().pushOpened(bundle);
+            } catch (ZaiusException e) {
+                e.printStackTrace();
+            }
+        }
+        // ...
+    }
+    // ...
+}
+```
+
+It is absolutely essential that you call `Zaius.getInstance().pushOpened(bundle)` as shown above, and with the extra information passed from the bundle to make sure that we can track open events accurately.
+
 {% hint style="danger" %}
 #### **Zaius.pushOpened is required to track push opens**
 
@@ -87,31 +154,4 @@ private void sendNotification(Bundle data) {
 {% hint style="success" %}
 Pass along the `Bundle` to `Zaius.pushOpened` in the `YourActivity.onCreate` method
 {% endhint %}
-
-## Register for Registration Callbacks
-
-#### Optional Step
-
-The Zaius Mobile SDK for Android supports event callbacks. Push token registration is supported for clients who want to be notified of push token registration events.
-
-Implement a class extending `ZaiusReceiver`:
-
-```java
-public class MyReceiver extends ZaiusReceiver {
-  @Override
-  public void onTokenRegistration(Context context, String token) {
-    // Do something with the token (e.g. fire an event)
-  }
-}
-```
-
-Reference the receiver inside the `application` element of your AndroidManifest.xml:
-
-```markup
-<receiver android:name=".MyReceiver" exported="false">
-  <intent-filter>
-    <action android:name="com.zaius.androidsdk.TOKEN_REGISTRATION_ACTION" />
-  </intent-filter>
-</receiver>
-```
 
